@@ -1,0 +1,258 @@
+---
+title: "Actividad 3: Modelización predictiva"
+author: "Jorge Cutipa Musaja"
+date: '`r format(Sys.Date(),"%e de %B, %Y")`'
+output:
+  html_document:
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r, echo=FALSE, message=FALSE}
+library(tibble)
+library(knitr)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(scales)
+library(pROC)
+```
+
+Importamos los datos.  
+```{r, message=FALSE}
+datos <- read.csv("Fumadores_clean_5Y_1.csv")
+```
+
+Validamos los tipos de los datos.  
+```{r}
+glimpse(datos)
+```
+
+# 1. Modelo de regresión lineal
+
+## 1.1. Modelo de regresión lineal múltiple (regresores cuantitativos)
+
+Estimamos el modelo lineal múltiple
+```{r}
+modeloLM <- lm(PC~Weight+Cig+Years, datos)
+summary(modeloLM)
+```
+
+La bondad de ajuste del modelo viene representada por el valor de $R^{2}$, el cual es `r round(summary(modeloLM)$r.squared,3)`. Por lo cual, se puede afirmar que un elevado valor de la variabilidad de PC, el `r round(summary(modeloLM)$r.squared*100,1)`% está siendo explicado por las variables Weight, Cig y Years.  
+
+Además, la significancia del modelo, en conjunto, está asegurada, pues el respectivo p-valor es menor a 0.05.  
+
+Respecto a los coeficientes del modelo, como se observa, solo el coeficiente de Weight no es significativo al 95% de confianza. Es decir, tienen influencia significativa sobre PC, en este modelo, las variables Cig, Years y el término constante (intercepto).  
+
+Desde el punto de vista teórico, no se incluye la variable Height en el modelo de regresión pues se asume que existe colinealidad (multicolinealidad) con la variable Weight, vale decir, que existe dependencia entre ellas (a mayor altura mayor peso y viceversa). Por tanto, si incluyésemos a estas dos variables estaríamos incorporando información redundante al modelo. 
+
+Para cerciorarmos de esto último, podemos calcular el coeficiente de correlación entre Weight y Height. El cual da por resultado: `r round(cor(datos$Weight, datos$Height)*100,1)`%. Esta cifra sobrepasa la referencia de 80%, que según la literatura estadística, a partir de este valor se evidencia la presencia de una alta correlación.  
+
+_____
+_____
+
+## 1.2. Modelo de regresión lineal múltiple (regresores cuantitativos y cualitativos)
+
+```{r}
+datos$SexR <- relevel(datos$Sex, ref = "F")
+datos$SportR <- relevel(datos$Sport, ref = "N")
+modeloLM2 <- lm(PC~Weight+Cig+Years+SexR+SportR, datos)
+summary(modeloLM2)
+```
+
+La bondad de ajuste del modelo viene representada por el valor de $R^{2}$, el cual es `r round(summary(modeloLM2)$r.squared,3)`. Por lo cual, se puede afirmar que un elevado valor de la variabilidad de PC, el `r round(summary(modeloLM2)$r.squared*100,1)`% está siendo explicado por las variables Weight, Cig, Years, Sex y Sport.  
+
+Si comparamos ambos modelos con el valor de $R^{2}$ ajustado, que es el indicador recomendado cuando queremos comparar dos modelos con la misma variable endógena pero distinto número de variables regresoras, obtendremos:  
+- $R^{2}$ ajustado de PC ~ Weight + Cig + Years: `r round(summary(modeloLM)$adj.r.squared,3)`  
+- $R^{2}$ ajustado de PC ~ Weight + Cig + Years + SexR + SportR: `r round(summary(modeloLM2)$adj.r.squared,3)`  
+Por lo cual, se observa que el modelo PC ~ Weight + Cig + Years + SexR + SportR explica mejor la variabilidad de PC que el estimado en el apartado 1.1.  
+
+Respecto a los coeficientes del modelo, como se observa, solo el coeficiente de Weight no es significativo al 95% de confianza. Es decir, tienen influencia significativa sobre PC, en este modelo, las variables Cig, Years, SexR(Sex), SportR(Sport) y el término constante (intercepto).  
+
+_____
+_____
+
+## 1.3. Efectuar una predicción de la capacidad pulmonar con los dos modelos
+
+```{r}
+caso <- data.frame(Weight=68, Cig=10, Years=15, SexR="M", SportR="R")
+
+prediccion1 <-predict(modeloLM, caso)
+prediccion2 <-predict(modeloLM2, caso)
+```
+
+Las predicciones con ambos modelos son:  
+- Predicción de PC en modelo PC ~ Weight + Cig + Years: `r round(prediccion1, 3)`  
+- Predicción de PC en modelo PC ~ Weight + Cig + Years + SexR + SportR: `r round(prediccion2, 3)`  
+
+A simple vista podría pensarse que la diferencia entre ambas predicciones no es significativa, pero si observamos los posibles valores que puede tomar PC:  
+```{r, echo=FALSE}
+summary(datos$PC)
+```
+podemos comentar que, una diferencia de décimas entre una estimación y otra sí puede marcar la diferencia si es que luego se pretende, por ejemplo, categorizar a los individuos según el valor de PC.  
+
+También, cabe indicar que en la información proporcionada hay datos que no se han utilizado, pues no pertenecen a ninguno de los modelos. Estos datos son: City (Lleida), Age(30), Height(175).    
+
+_____
+_____
+
+# 2. Modelo de regresión logística
+
+## 2.1. Estimación de un modelo de regresión logística
+
+Creamos la variable binaria smoker
+```{r}
+datos$smoker = ifelse(datos$Years==0, 0, 
+                      ifelse(datos$Years!=0, 1,
+                             NA))
+```
+
+```{r}
+modeloLOGIT <- glm(smoker ~ PC+Weight+SexR, data=datos, family = "binomial")
+summary(modeloLOGIT)
+```
+
+Se observa que, además del término constante, solo el coeficiente de la variable PC tiene influencia significativa en la estimación de smoker.
+
+Evaluando los resultados, dado que el signo del coeficiente de PC es negativo, se puede afirmar que un incremento en PC impacta negativamente en la probabilidad de ser fumador (smoker) y viceversa. Dicho de otra manera, un individuo con capacidad pulmonar (PC) reducida tiene mayor probabilidad de ser fumador y viceversa.
+
+Por otro lado, como el signo del coeficiente de SexRM es positivo y, en los valores de Sex solo se puede ser masculino (M) o femenino (F), necesariamente, el signo del coeficiente de SexRF debe ser negativo y el valor del coeficiente el negativo de SexRM. Coefiente para SexRF = -`r round(modeloLOGIT[["coefficients"]][["SexRM"]],3)`. Es decir, ser mujer disminuye la probabilidad de ser fumador.  
+
+Se debe tomar en cuenta que los párrafos anteriores son solo con fines interpretativos, pues el coeficiente de SexRM es no significativo.  
+
+_____
+_____
+
+## 2.2. Predicción en el modelo lineal generalizado (modelo de regresión logística)
+
+```{r}
+caso2 <- data.frame(PC=3.75, Weight=68, SexR="M")
+
+prediccion3 <- predict(modeloLOGIT, caso2, type="response")
+```
+
+Realizando la predicción, el individuo tiene una probabilidad de `r round(prediccion3*100,1)`% de ser fumador. Si asumimos que a partir de una probabilidad menor al 50% se categoriza al individuo como no fumador, entonces diríamos que para este indivuo el pronóstico es No Fumador (smoker==0)
+
+Cabe indicar que en la información proporcionada hay un dato que no se han utilizado, pues no pertenece al modelo Logit. Este es Height(175).    
+
+_____
+_____
+
+## 2.3. Mejora del modelo
+
+```{r, warning=FALSE}
+modeloLOGIT_MAS_Age <- glm(smoker ~ PC+Weight+SexR+Age, data=datos, family = "binomial")
+summary(modeloLOGIT_MAS_Age)
+
+modeloLOGIT_MAS_SportR <- glm(smoker ~ PC+Weight+SexR+SportR, data=datos, family = "binomial")
+summary(modeloLOGIT_MAS_SportR)
+
+modeloLOGIT_MAS_Age_SportR <- glm(smoker ~ PC+Weight+SexR+Age+SportR, data=datos, family = "binomial")
+summary(modeloLOGIT_MAS_Age_SportR)
+```
+
+Los valores AIC para los cuatro modelos es:   
+- AIC en modeloLOGIT: `r round(modeloLOGIT[["aic"]],3)`  
+- AIC en modeloLOGIT_MAS_Age: `r round(modeloLOGIT_MAS_Age[["aic"]],3)`  
+- AIC en modeloLOGIT_MAS_SportR: `r round(modeloLOGIT_MAS_SportR[["aic"]],3)`  
+- AIC en modeloLOGIT_MAS_Age_SportR: `r round(modeloLOGIT_MAS_Age_SportR[["aic"]],3)`    
+
+Por tanto, como se puede observar, el modelo logit con el menor valor en AIC es el último, cuya fórmula de representación es: smoker ~ PC+Weight+SexR+Age+SportR  
+
+_____
+_____
+
+## 2.4. Calidad del ajuste
+
+Realizamos la predicción para smoker usando el modelo logit smoker~PC+Weight+SexR+Age+SportR    
+```{r}
+prediccion4 <- predict(modeloLOGIT_MAS_Age_SportR, datos, type="response")
+probabilidad4 <- data.frame(prediccion4)
+colnames(probabilidad4) <- "smoker"
+probabilidad4$smoker <- ifelse(probabilidad4$smoker>=.7, 1,
+                               ifelse(probabilidad4$smoker<.7, 0,
+                                      NA))
+```
+
+Calculamos la matriz de confusión  
+```{r}
+table(datos$smoker, probabilidad4$smoker, dnn = c("Real","Predicción"))
+```
+
+Se observa que existen 4 falsos negativos, es decir, 4 individuos que fueron categorizados por el modelo logit como no fumadores (smoker==0), pero que en el contraste con el dataset resulta que sí son fumadores (smoker==1). Asimismo, se observa que existen 2 falsos positivos, es decir, 2 individuos que fueron categorizados por el modelo logit como fumadores (smoker==1), pero que en el contraste con el dataset resulta que no son fumadores (smoker==0).  
+
+_____
+_____
+
+## 2.5. La selección de los individuos fumadores  
+
+Creamos una variable para representar un PC elevado, considerando a aquellos con un PC elevado cuando su valor PC es superior o igual al valor del cuartil tercero de PC.
+```{r}
+
+datos$PC_elevado <- ifelse(datos$PC >= quantile(datos$PC, prob=c(.50)), 1,
+                           ifelse(datos$PC < quantile(datos$PC, prob=c(.50)), 0,
+                                  NA)) 
+```
+
+```{r}
+table(datos$PC_elevado, probabilidad4$smoker, dnn = c("PC elevado","Predicción de ser fumador (smoker_predict)"))
+```
+
+En la tabla anterior se identifica que 8 individuos tienen un PC elevado (PC_elevado==1), sin embargo, según la predicción, son categorizados como fumadores (smoker_predict==1).  
+
+Los valores de probabilidad de ser fumador (probabilidad) y de PC de estos individuos con comportamiento no esperado es:
+```{r, echo=FALSE}
+datos$probabilidad <- prediccion4
+datos$smoker_predict <- probabilidad4$smoker
+```
+
+```{r}
+datos %>%
+  select(probabilidad, PC) %>%
+  filter(datos$PC_elevado==1, datos$smoker_predict==1) %>%
+  mutate(probabilidad=round(probabilidad,3))
+```
+
+Gráficamente podemos realizar lo siguiente:  
+```{r}
+datos$grupo <- ifelse(datos$smoker_predict==1 & datos$PC_elevado==1, "Comportamiento no esperado", 
+                      "Comportamiento esperado")
+
+ggplot(data=datos, aes(probabilidad, PC, color=grupo)) +
+  geom_point() +
+  ggtitle("Identificación gráfica de comportamientos\n
+          esperados y no esperados") + 
+  labs(caption = "\n
+Comportamiento no esperado: PC_elevado==1 y smoker_predict==1\n
+Comportamiento esperado: PC_elevado==0 y smoker_predict==0\n
+o PC_elevado==1 y smoker_predict==0\n
+o PC_elevado==0 y smoker_predict==1") +
+   theme(plot.caption=element_text(hjust = 0.0, vjust = 5 ,size = 7))
+```
+
+_____
+_____
+
+## 2.6. Curva ROC
+
+```{r}
+#ROC <- roc(datos$smoker, datos$probabilidad, percent=T, smooth=F, auc=T, ci=T, plot=T)
+ROC <- roc(datos$smoker, datos$probabilidad)
+plot(ROC)
+```
+
+La curva ROC muestra los intercambios entre los verdaderos positivos y los falsos positivos. Donde, en el eje Y están representados los verdaderos positivos (en proporción) y en el eje X, 1 - verdaderos positivos (en proporción).  
+
+Teóricamente, el mejor resultado posible es cuando todos los casos son verdaderos positivos, por lo cual, la curva se posicionaría en un punto de la esquina izquierda superior. Es decir, un 100% de sensibilidad (ningún falso negativo) y un 100% de especificidad (ningún falso positivo). Como podemos observar, nuestro modelo logit se acerca bastante a este punto.   
+
+Finalmente, el valor de AUC (área bajo la curva) es:
+```{r, echo=FALSE}
+ROC$auc
+```
+
+El valor máximo posible es 1, cuando existe 100% en sensibilidad (ningún falso negativo) y 100% en especificidad (ningún falso positivo). 
+
+_____
+_____
